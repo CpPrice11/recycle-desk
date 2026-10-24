@@ -169,10 +169,13 @@ fn preview_fixture(dir: &Path, nonce: u128) -> std::result::Result<(), Box<dyn s
         .iter()
         .filter(|&&p| p & 255 > 220 && (p >> 16) & 255 < 30)
         .count();
-    assert!(
-        red > 100 && blue > 100,
-        "Expected actual image thumbnail, red={red}, blue={blue}"
-    );
+    if red <= 100 || blue <= 100 {
+        return Err(format!(
+            "Expected actual image thumbnail, red={red}, blue={blue}, pixels={}",
+            pixels.len()
+        )
+        .into());
+    }
     Ok(())
 }
 

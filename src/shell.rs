@@ -180,7 +180,7 @@ pub fn preview(id: &[u8], side: i32) -> Result<Vec<u32>> {
         let flags = SIIGBF_RESIZETOFIT | SIIGBF_SCALEUP;
         let image = crate::images::Bitmap(
             factory
-                .GetImage(size, flags)
+                .GetImage(size, flags | SIIGBF_THUMBNAILONLY)
                 .or_else(|_| factory.GetImage(size, flags | SIIGBF_ICONONLY))?,
         );
         crate::images::pixels(&image, side)
