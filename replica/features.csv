@@ -14,7 +14,7 @@ RD12,S03,F05,Portable settings,must,no,yes,integration_pass,Marker and settings 
 RD13,S01,F06,Hide window and release preview cache,must,yes,partial,code_checked_manual_pending,At most 96 cached previews; generation cancels stale worker replies; native image list explicitly owned
 RD14,S01,F06,Single instance and explicit exit,must,partial,partial,probe_pass_manual_pending,Update probe verified parent PID and mutex; second GUI instance still needs observation
 RD15,S03,F07,Signed automatic GitHub updates,must,no,yes,github_integration_pass,Public 0.1.1 package verified and installed by isolated control version; no changes to updater here
-RD16,package,F07,Portable ZIP and per-user installer,must,no,partial,release_0_1_1_pass,Existing release verified; new preview changes have not been released or repackaged
+RD16,package,F07,Portable ZIP and per-user installer,must,no,partial,release_0_1_2_ci_pass,0.1.2 published; CI build and signing and downloaded checksums verified; current installer not executed locally
 RD17,S03,F05,User-supplied ICO selection,could,yes,skip,not_in_scope,Current request is the app's own branded tray icon
 RD18,S03,F06,Configurable single and double click actions,could,yes,skip,not_in_scope,Agreed interaction opens the manager on a tray click
 RD19,S03,F03,Disable deletion confirmation,could,yes,skip,excluded_by_design,Explicit destructive confirmation remains mandatory
