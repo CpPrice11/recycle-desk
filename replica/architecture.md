@@ -1,8 +1,8 @@
 # Архітектура
 
-Rust + Microsoft windows-rs, Win32 common controls, Windows Shell COM. Один процес, один message loop; COM STA у потоці роботи з Shell. Немає вебсервера, WebView, БД, мережі під час роботи.
+Rust + Microsoft windows-rs, Win32 common controls, Windows Shell COM. Один процес, один message loop; COM STA у потоці роботи з Shell. Немає вебсервера, WebView чи БД. Мережа потрібна лише для GitHub-оновлень.
 
-- `shell.rs`: перелік Shell Recycle Bin, властивості, IFileOperation для відновлення й остаточного видалення; підсумок SHQueryRecycleBinW.
+- `shell.rs`: перелік Shell Recycle Bin, властивості, канонічний IContextMenu undelete для відновлення, IFileOperation для остаточного видалення; підсумок SHQueryRecycleBinW.
 - `ui.rs`: системний ListView, edit, кнопки й меню; стан/індекси вибору належать вікну. Асинхронне читання передає готові дані через повідомлення, COM-об’єкти не передаються між потоками.
 - `settings.rs`: невеликий текстовий INI; portable marker поряд із EXE, інакше LocalAppData; перевірка значень, атомарне збереження. Автозапуск у HKCU лише явним перемикачем.
 - `text.rs`: однаковий набір ключів uk/en, множина й одиниці розміру.
