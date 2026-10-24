@@ -1,0 +1,76 @@
+name: Build and release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Rust version
+        run: rustc --version
+      - name: Check release version and signing setup
+        shell: pwsh
+        run: |
+          $version = (Select-String Cargo.toml -Pattern '^version = "([0-9.]+)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag must match Cargo.toml version' }
+          if (-not (Test-Path resources/update-public.key) -or (Get-Item resources/update-public.key).Length -ne 32) { throw 'Update public key missing' }
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build.ps1
+      - name: Live Windows Shell smoke test
+        shell: pwsh
+        run: ./scripts/test-live.ps1 -Exe target/x86_64-pc-windows-msvc/release/recycle-desk.exe
+      - name: Package
+        shell: pwsh
+        run: |
+          $compiler = ./scripts/setup-inno.ps1
+          ./scripts/package.ps1 -Iscc $compiler
+      - name: Build signing tool
+        run: cargo build --release --locked --example release_sign
+      - name: Sign update archive
+        shell: pwsh
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RECYCLE_DESK_SIGNING_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_SIGNING_KEY)) { throw 'Set RECYCLE_DESK_SIGNING_KEY secret before creating a release' }
+          $keyPath = Join-Path $env:RUNNER_TEMP 'recycle-desk-release.key'
+          try {
+            $key = [Convert]::FromBase64String($env:RELEASE_SIGNING_KEY)
+            if ($key.Length -ne 64) { throw 'Signing secret must contain a Base64-encoded 64-byte keypair' }
+            [IO.File]::WriteAllBytes($keyPath, $key)
+            ./scripts/sign-update.ps1 -PrivateKey $keyPath
+          } finally {
+            if (Test-Path -LiteralPath $keyPath) { Remove-Item -LiteralPath $keyPath -Force }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecycleDesk-windows-x64
+          path: |
+            dist/*.zip
+            dist/*setup.exe
+            dist/SHA256SUMS.txt
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: RecycleDesk-windows-x64
+          path: dist
+      - name: Create draft release for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --draft --generate-notes --title "Recycle Desk $TAG"

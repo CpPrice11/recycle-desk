@@ -1,0 +1,3 @@
+resources/update-public.key -text
+*.png binary
+*.ico binary

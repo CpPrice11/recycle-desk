@@ -1,0 +1,10 @@
+/target/
+/.tools/
+/dist/
+/test-output/
+/.codex/
+/work/
+/ROADMAP.md
+*.user
+recycle-desk.ini
+*private*.key
