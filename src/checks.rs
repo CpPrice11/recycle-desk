@@ -147,7 +147,10 @@ fn preview_fixture(dir: &Path, nonce: u128) -> std::result::Result<(), Box<dyn s
     let items = shell::scan()?;
     let item = items
         .iter()
-        .find(|i| i.name == fixture.file_name().unwrap().to_string_lossy())
+        .find(|i| {
+            i.name == fixture.file_name().unwrap().to_string_lossy()
+                || i.name == fixture.file_stem().unwrap().to_string_lossy()
+        })
         .ok_or("Image fixture absent from recycle bin")?;
     let preview = shell::preview(&item.id, 40);
     let restored = shell::act(0, &[item.id.clone()], Action::Restore)?;

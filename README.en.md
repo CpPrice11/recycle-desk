@@ -4,7 +4,7 @@ A compact native Windows recycle bin manager written independently in Rust and W
 
 [Download the latest release](https://github.com/CpPrice11/recycle-desk/releases/latest) · [Українська](README.md)
 
-Work after 0.1.1 adds inline file thumbnails, a branded tray icon with a full-bin indicator, and dark table-header painting. These changes are not in the published 0.1.1 release yet. Visual validation remains incomplete; see the [build log](replica/build-log.md).
+Version 0.1.2 adds inline file thumbnails, a branded tray icon with a full-bin indicator, and corrected dark table-header painting. Visual validation remains incomplete; see the [build log](replica/build-log.md).
 
 ## Features
 
