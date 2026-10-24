@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 mod checks;
+mod images;
 mod settings;
 mod shell;
 mod text;

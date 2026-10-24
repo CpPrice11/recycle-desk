@@ -153,6 +153,40 @@ pub fn scan() -> Result<Vec<Item>> {
     }
 }
 
+/// Resolve the recycled object itself, never its possibly reused original path.
+/// Windows supplies thumbnails where available and file-type icons otherwise.
+pub fn preview(id: &[u8], side: i32) -> Result<Vec<u32>> {
+    if !(16..=96).contains(&side) || id.len() < 2 {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    let _com = Com::new()?;
+    unsafe {
+        let item: IShellItem = SHCreateItemFromIDList(id.as_ptr().cast())?;
+        let factory = item
+            .GetDisplayName(SIGDN_FILESYSPATH)
+            .ok()
+            .and_then(|path| {
+                let factory = SHCreateItemFromParsingName::<_, _, IShellItemImageFactory>(
+                    path,
+                    None::<&IBindCtx>,
+                )
+                .ok();
+                CoTaskMemFree(Some(path.0.cast()));
+                factory
+            })
+            .or_else(|| item.cast::<IShellItemImageFactory>().ok())
+            .ok_or_else(|| Error::from_hresult(E_NOINTERFACE))?;
+        let size = SIZE { cx: side, cy: side };
+        let flags = SIIGBF_RESIZETOFIT | SIIGBF_SCALEUP;
+        let image = crate::images::Bitmap(
+            factory
+                .GetImage(size, flags)
+                .or_else(|_| factory.GetImage(size, flags | SIIGBF_ICONONLY))?,
+        );
+        crate::images::pixels(&image, side)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum Action {
     Restore,

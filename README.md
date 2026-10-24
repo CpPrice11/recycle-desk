@@ -4,6 +4,8 @@
 
 [Завантажити останній реліз](https://github.com/CpPrice11/recycle-desk/releases/latest) · [English](README.en.md)
 
+Робочі зміни після 0.1.1: мініпрев’ю файлів у списку, власна іконка трея з індикатором заповнення та виправлення темного заголовка таблиці. Публічний 0.1.1 їх ще не містить. Візуальна перевірка цих змін не завершена; стан перевірок — у [replica/build-log.md](replica/build-log.md).
+
 ## Можливості
 
 - Значок порожнього/повного кошика, кількість елементів і сумарний розмір у підказці.
@@ -75,6 +77,6 @@ Workflow перевіряє код, будує EXE, portable ZIP та інста
 - Тексти ліцензій залежностей: [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt); файл включено до всіх пакетів.
 - Windows API bindings: [Microsoft windows-rs](https://github.com/microsoft/windows-rs), MIT/Apache-2.0, транзитивні пакети зафіксовано в `Cargo.lock`.
 - Кольори: [Catppuccin palette](https://github.com/catppuccin/palette), MIT.
-- Значки кошика у треї: системні ресурси Microsoft Windows через `SHGetStockIconInfo`. Segoe UI використовується із системи, файл шрифту не розповсюджується.
+- Іконка трея: власний вбудований ICO з індикатором заповнення; вихідний актив наведений нижче. Мініатюри та значки типів файлів отримуються через Windows Shell; нейтральний fallback — системний ресурс Microsoft Windows через `SHGetStockIconInfo`. Segoe UI використовується із системи, файл шрифту не розповсюджується.
 - EXE-значок: оригінальне зображення, згенероване через `imagegen`, і Windows ICO, MIT у складі проєкту. Це растрова іконка; векторного оригіналу немає. Оригінальний бренд чи активи Minibin не копіювалися. Попередня геометрична заготовка збережена окремо як `resources/app.ico`.
 - Дослідження функціональності: [king-tri-ton/minibin](https://github.com/king-tri-ton/minibin), джерела та обмеження в [replica/recon.md](replica/recon.md).

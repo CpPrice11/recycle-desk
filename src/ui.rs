@@ -1,4 +1,5 @@
 use crate::{
+    images,
     settings::{self, Settings, Theme},
     shell::{self, Action, Item, Summary},
     text::{self, Key, Lang},
@@ -6,9 +7,13 @@ use crate::{
 use recycle_desk::updater;
 use std::{
     cell::{Cell, RefCell},
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     mem::size_of,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, Receiver, Sender},
+        Arc,
+    },
 };
 use windows::{
     core::*,
@@ -45,12 +50,19 @@ const THEME_LIGHT: usize = 204;
 const THEME_DARK: usize = 205;
 const STARTUP: usize = 206;
 const AUTO_UPDATE: usize = 207;
+const PREVIEW_LIMIT: usize = 96;
+const PREVIEW_SIDE_DIP: i32 = 40;
+const PREVIEW_MIN_PX: i32 = 32;
+const PREVIEW_MAX_PX: i32 = 96;
+const PREVIEW_TIMER: usize = 5;
+const PREVIEW_DELAY_MS: u32 = 60;
 
 enum Reply {
     Update(std::result::Result<Option<updater::Staged>, String>),
     List(std::result::Result<Vec<Item>, String>),
     Stats(std::result::Result<Summary, String>),
     Operation(std::result::Result<bool, String>),
+    Previews(u64, Vec<(Vec<u8>, Option<Vec<u32>>)>),
 }
 enum Effect {
     None,
@@ -128,6 +140,10 @@ struct App {
     update_status: Key,
     shutting_down: bool,
     opening_window: bool,
+    previews: HIMAGELIST,
+    preview_indices: HashMap<Vec<u8>, i32>,
+    preview_generation: Arc<AtomicU64>,
+    preview_busy: bool,
 }
 
 impl App {
@@ -174,6 +190,10 @@ impl App {
             update_status: Key::UpdateUnconfigured,
             shutting_down: false,
             opening_window: !std::env::args().any(|a| a == "--tray"),
+            previews: HIMAGELIST::default(),
+            preview_indices: HashMap::new(),
+            preview_generation: Arc::new(AtomicU64::new(0)),
+            preview_busy: false,
         }
     }
     fn t(&self, key: Key) -> &'static str {
@@ -367,7 +387,11 @@ impl App {
         self.list = self.control(
             WC_LISTVIEWW,
             "",
-            WS_TABSTOP | WS_BORDER | WINDOW_STYLE(LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS),
+            WS_TABSTOP
+                | WS_BORDER
+                | WINDOW_STYLE(
+                    LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS,
+                ),
             110,
         )?;
         SendMessageW(
@@ -378,6 +402,8 @@ impl App {
                 (LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP) as isize,
             )),
         );
+        SetWindowSubclass(self.list, Some(list_subclass), 1, self.hwnd.0 as usize).ok()?;
+        self.reset_previews()?;
         for (i, key) in [Key::Name, Key::From, Key::Size, Key::Date]
             .iter()
             .enumerate()
@@ -525,6 +551,8 @@ impl App {
         Ok(())
     }
     unsafe fn hide(&mut self) {
+        self.preview_generation.fetch_add(1, Ordering::Relaxed);
+        let _ = KillTimer(Some(self.hwnd), PREVIEW_TIMER);
         let _ = ShowWindow(self.hwnd, SW_HIDE);
         for hwnd in self.controls.drain(..) {
             let _ = DestroyWindow(hwnd);
@@ -535,7 +563,109 @@ impl App {
         self.total = HWND::default();
         self.items = Vec::new();
         self.visible = Vec::new();
+        self.preview_indices = HashMap::new();
+        if !self.previews.is_invalid() {
+            let _ = ImageList_Destroy(Some(self.previews));
+            self.previews = HIMAGELIST::default();
+        }
         self.publish_paint();
+    }
+
+    fn preview_side(&self) -> i32 {
+        self.px(PREVIEW_SIDE_DIP)
+            .clamp(PREVIEW_MIN_PX, PREVIEW_MAX_PX)
+    }
+
+    unsafe fn reset_previews(&mut self) -> Result<()> {
+        let side = self.preview_side();
+        let list = ImageList_Create(side, side, ILC_COLOR32 | ILC_MASK, 1, 8);
+        if list.is_invalid() {
+            return Err(Error::from_win32());
+        }
+        let mut stock = SHSTOCKICONINFO {
+            cbSize: size_of::<SHSTOCKICONINFO>() as u32,
+            ..Default::default()
+        };
+        let stock_result =
+            SHGetStockIconInfo(SIID_DOCNOASSOC, SHGSI_ICON | SHGSI_LARGEICON, &mut stock);
+        let placeholder = if stock_result.is_ok() {
+            ImageList_ReplaceIcon(list, -1, stock.hIcon)
+        } else {
+            -1
+        };
+        if !stock.hIcon.is_invalid() {
+            let _ = DestroyIcon(stock.hIcon);
+        }
+        if placeholder < 0 {
+            let _ = ImageList_Destroy(Some(list));
+            return Err(stock_result
+                .err()
+                .unwrap_or_else(|| Error::from_hresult(E_OUTOFMEMORY)));
+        }
+        self.preview_generation.fetch_add(1, Ordering::Relaxed);
+        self.preview_indices.clear();
+        SendMessageW(
+            self.list,
+            LVM_SETIMAGELIST,
+            Some(WPARAM(LVSIL_SMALL as usize)),
+            Some(LPARAM(list.0 as isize)),
+        );
+        if !self.previews.is_invalid() {
+            let _ = ImageList_Destroy(Some(self.previews));
+        }
+        self.previews = list;
+        SetTimer(Some(self.hwnd), PREVIEW_TIMER, PREVIEW_DELAY_MS, None);
+        Ok(())
+    }
+
+    unsafe fn request_previews(&mut self) {
+        if self.preview_busy || self.list.is_invalid() || self.previews.is_invalid() || self.busy {
+            return;
+        }
+        let top = SendMessageW(self.list, LVM_GETTOPINDEX, None, None)
+            .0
+            .max(0) as usize;
+        let count = (SendMessageW(self.list, LVM_GETCOUNTPERPAGE, None, None)
+            .0
+            .max(1) as usize
+            + 2)
+        .min(PREVIEW_LIMIT);
+        let wanted = self
+            .visible
+            .iter()
+            .skip(top)
+            .take(count)
+            .map(|&index| self.items[index].id.clone())
+            .collect::<Vec<_>>();
+        let mut missing = wanted
+            .iter()
+            .filter(|id| !self.preview_indices.contains_key(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        if missing.is_empty() {
+            return;
+        }
+        if self.preview_indices.len() + missing.len() > PREVIEW_LIMIT {
+            if self.reset_previews().is_err() {
+                return;
+            }
+            missing = wanted;
+        }
+        let side = self.preview_side();
+        let epoch = self.preview_generation.clone();
+        let generation = epoch.load(Ordering::Relaxed);
+        self.preview_busy = true;
+        self.send_work(move || {
+            let mut entries = Vec::new();
+            for id in missing {
+                if epoch.load(Ordering::Relaxed) != generation {
+                    break;
+                }
+                let image = shell::preview(&id, side).ok();
+                entries.push((id, image));
+            }
+            Reply::Previews(generation, entries)
+        });
     }
     fn send_work(&self, work: impl FnOnce() -> Reply + Send + 'static) {
         let tx = self.tx.clone();
@@ -718,29 +848,21 @@ impl App {
         }
         self.buttons();
         self.fit_columns();
+        SetTimer(Some(self.hwnd), PREVIEW_TIMER, PREVIEW_DELAY_MS, None);
         let _ = InvalidateRect(Some(self.list), None, true);
     }
     unsafe fn tray(&mut self, add: bool) {
-        let mut stock = SHSTOCKICONINFO {
-            cbSize: size_of::<SHSTOCKICONINFO>() as u32,
-            ..Default::default()
+        let size = GetSystemMetricsForDpi(SM_CXSMICON, self.dpi as u32).clamp(16, 64);
+        let Ok(icon) = images::tray_icon(size, self.stats_ok && self.summary.count > 0) else {
+            return;
         };
-        let _ = SHGetStockIconInfo(
-            if self.summary.count == 0 {
-                SIID_RECYCLER
-            } else {
-                SIID_RECYCLERFULL
-            },
-            SHGSI_ICON | SHGSI_SMALLICON,
-            &mut stock,
-        );
         let mut data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: self.hwnd,
             uID: 1,
             uFlags: NIF_MESSAGE | NIF_TIP | NIF_ICON,
             uCallbackMessage: TRAY,
-            hIcon: stock.hIcon,
+            hIcon: icon,
             ..Default::default()
         };
         let tip = if self.stats_ok {
@@ -765,7 +887,7 @@ impl App {
         if !self.icon.is_invalid() {
             let _ = DestroyIcon(self.icon);
         }
-        self.icon = stock.hIcon;
+        self.icon = icon;
     }
     unsafe fn menu(&self, settings_menu: bool) -> Result<usize> {
         let menu = CreatePopupMenu()?;
@@ -937,6 +1059,10 @@ impl App {
             WM_DPICHANGED => {
                 self.dpi = (wp.0 & 0xffff) as i32;
                 self.fonts();
+                if !self.list.is_invalid() {
+                    let _ = self.reset_previews();
+                }
+                self.tray(false);
                 let r = &*(lp.0 as *const RECT);
                 let _ = SetWindowPos(
                     self.hwnd,
@@ -977,11 +1103,39 @@ impl App {
                 2 => self.tray(true),
                 3 => self.stats(),
                 4 => self.check_updates(),
+                PREVIEW_TIMER => {
+                    let _ = KillTimer(Some(self.hwnd), PREVIEW_TIMER);
+                    self.request_previews();
+                }
                 _ => {}
             },
             RESULT => {
                 while let Ok(reply) = self.rx.try_recv() {
                     match reply {
+                        Reply::Previews(generation, entries) => {
+                            self.preview_busy = false;
+                            if generation == self.preview_generation.load(Ordering::Relaxed)
+                                && !self.list.is_invalid()
+                            {
+                                for (id, pixels) in entries {
+                                    let index = pixels
+                                        .and_then(|pixels| {
+                                            images::bitmap(&pixels, self.preview_side()).ok()
+                                        })
+                                        .map(|bitmap| ImageList_Add(self.previews, bitmap.0, None))
+                                        .filter(|&i| i >= 0)
+                                        .unwrap_or(0);
+                                    self.preview_indices.insert(id, index);
+                                }
+                                SendMessageW(
+                                    self.list,
+                                    LVM_REDRAWITEMS,
+                                    Some(WPARAM(0)),
+                                    Some(LPARAM(self.visible.len().saturating_sub(1) as isize)),
+                                );
+                            }
+                            self.request_previews();
+                        }
                         Reply::Update(result) => {
                             self.update_busy = false;
                             if !self.settings.auto_update {
@@ -1014,6 +1168,7 @@ impl App {
                                     Ok(items) => {
                                         let keep = self.selected();
                                         self.items = items;
+                                        let _ = self.reset_previews();
                                         self.view_error = false;
                                         self.rebuild(Some(keep));
                                         let status = self.last_status.take().unwrap_or(Key::Ready);
@@ -1079,6 +1234,16 @@ impl App {
                         }
                         LVN_GETDISPINFOW => {
                             let info = &mut *(lp.0 as *mut NMLVDISPINFOW);
+                            if info.item.mask & LVIF_IMAGE != LIST_VIEW_ITEM_FLAGS(0) {
+                                info.item.iImage = self
+                                    .visible
+                                    .get(info.item.iItem as usize)
+                                    .and_then(|&index| {
+                                        self.preview_indices.get(&self.items[index].id)
+                                    })
+                                    .copied()
+                                    .unwrap_or(0);
+                            }
                             if info.item.mask & LVIF_TEXT != LIST_VIEW_ITEM_FLAGS(0) {
                                 if let Some(&index) = self.visible.get(info.item.iItem as usize) {
                                     let item = &self.items[index];
@@ -1107,6 +1272,9 @@ impl App {
                                     }
                                 }
                             }
+                        }
+                        LVN_ODCACHEHINT => {
+                            SetTimer(Some(self.hwnd), PREVIEW_TIMER, PREVIEW_DELAY_MS, None);
                         }
                         LVN_COLUMNCLICK => {
                             let col = (*(lp.0 as *const NMLISTVIEW)).iSubItem as usize;
@@ -1144,6 +1312,19 @@ impl App {
             },
             WM_DESTROY => {
                 self.shutting_down = true;
+                self.preview_generation.fetch_add(1, Ordering::Relaxed);
+                if !self.previews.is_invalid() {
+                    if !self.list.is_invalid() {
+                        SendMessageW(
+                            self.list,
+                            LVM_SETIMAGELIST,
+                            Some(WPARAM(LVSIL_SMALL as usize)),
+                            Some(LPARAM(0)),
+                        );
+                    }
+                    let _ = ImageList_Destroy(Some(self.previews));
+                    self.previews = HIMAGELIST::default();
+                }
                 if self.watch != 0 {
                     let _ = SHChangeNotifyDeregister(self.watch);
                 }
@@ -1237,6 +1418,27 @@ unsafe fn install_update(hwnd: HWND) {
             Err(_) => app_cell(hwnd).borrow_mut().update_status = Key::UpdateFailed,
         }
     }
+}
+
+// The header sends custom-draw notifications to its ListView parent, not the
+// top-level window. Forward only painting, without borrowing mutable app state.
+unsafe extern "system" fn list_subclass(
+    hwnd: HWND,
+    msg: u32,
+    wp: WPARAM,
+    lp: LPARAM,
+    _: usize,
+    parent: usize,
+) -> LRESULT {
+    if msg == WM_NOTIFY {
+        if let Some(result) = paint_window(HWND(parent as *mut _), msg, wp, lp) {
+            return result;
+        }
+    }
+    if msg == WM_NCDESTROY {
+        let _ = RemoveWindowSubclass(hwnd, Some(list_subclass), 1);
+    }
+    DefSubclassProc(hwnd, msg, wp, lp)
 }
 
 unsafe fn paint_window(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {

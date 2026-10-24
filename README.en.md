@@ -4,6 +4,8 @@ A compact native Windows recycle bin manager written independently in Rust and W
 
 [Download the latest release](https://github.com/CpPrice11/recycle-desk/releases/latest) · [Українська](README.md)
 
+Work after 0.1.1 adds inline file thumbnails, a branded tray icon with a full-bin indicator, and dark table-header painting. These changes are not in the published 0.1.1 release yet. Visual validation remains incomplete; see the [build log](replica/build-log.md).
+
 ## Features
 
 - Tray icon with item count and total size.
@@ -40,4 +42,4 @@ GitHub Actions embeds the current repository and update public key. Tagged build
 
 ## Credits
 
-Code: [MIT](LICENSE). Dependency licenses: [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt). Colors: [Catppuccin](https://github.com/catppuccin/palette). Tray icons and Segoe UI come from Windows; the font is not redistributed. The app icon was generated with `imagegen` from an original prompt; [provenance](resources/icons/README.md). No Minibin source code or brand assets were copied.
+Code: [MIT](LICENSE). Dependency licenses: [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt). Colors: [Catppuccin](https://github.com/catppuccin/palette). File thumbnails, file-type icons and Segoe UI come from Windows; the font is not redistributed. The app and tray icon was generated with `imagegen` from an original prompt; [provenance](resources/icons/README.md). Its full-bin indicator is drawn at runtime. No Minibin source code or brand assets were copied.
