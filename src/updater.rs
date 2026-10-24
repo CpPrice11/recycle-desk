@@ -85,6 +85,12 @@ fn asset_name(version: &str) -> String {
     format!("RecycleDesk-{version}-windows-x64-update.zip")
 }
 
+fn valid_asset_url(repository: &str, url: &str) -> bool {
+    let prefix = format!("https://api.github.com/repos/{repository}/releases/assets/");
+    url.strip_prefix(&prefix)
+        .is_some_and(|id| !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit()))
+}
+
 fn newer_stable(current: &str, next: &str) -> bool {
     !next.contains('-')
         && !next.contains('+')
@@ -165,13 +171,9 @@ pub fn check(config: &Config) -> Result<Option<Staged>> {
         .iter()
         .find(|a| a.name() == filename)
         .ok_or("Signed update asset is missing")?;
-    // Accept only this repository's GitHub release downloads. No user-supplied
-    // mirrors or arbitrary URLs, even if an API response is malformed.
-    let prefix = format!(
-        "https://github.com/{}/releases/download/",
-        config.repository
-    );
-    if !asset.download_url().starts_with(&prefix) {
+    // self_update exposes GitHub's API asset URL, not browser_download_url.
+    // Accept only this repository's numeric asset endpoint.
+    if !valid_asset_url(&config.repository, asset.download_url()) {
         return Err("Unexpected update download origin".into());
     }
     let exe = std::env::current_exe()?;
@@ -186,6 +188,7 @@ pub fn check(config: &Config) -> Result<Option<Staged>> {
     let mut response = agent
         .get(asset.download_url())
         .header("User-Agent", "RecycleDesk-Updater")
+        .header("Accept", "application/octet-stream")
         .call()?;
     let size = io::copy(
         &mut response.body_mut().as_reader().take(MAX_ARCHIVE + 1),
@@ -343,6 +346,23 @@ mod tests {
             }
         }
         Ok(())
+    }
+    #[test]
+    fn github_asset_endpoint_is_pinned_to_repository() {
+        assert!(valid_asset_url(
+            "CpPrice11/recycle-desk",
+            "https://api.github.com/repos/CpPrice11/recycle-desk/releases/assets/672189888"
+        ));
+        for url in [
+            "https://api.github.com/repos/other/recycle-desk/releases/assets/1",
+            "https://api.github.com/repos/CpPrice11/recycle-desk/releases/assets/",
+            "https://api.github.com/repos/CpPrice11/recycle-desk/releases/assets/1?redirect=evil",
+            "https://api.github.com/repos/CpPrice11/recycle-desk/releases/assets/../1",
+            "https://api.github.com.evil/repos/CpPrice11/recycle-desk/releases/assets/1",
+            "https://github.com/CpPrice11/recycle-desk/releases/download/v0.1.0/update.zip",
+        ] {
+            assert!(!valid_asset_url("CpPrice11/recycle-desk", url));
+        }
     }
     #[test]
     fn versions_repositories_and_idle_gate() {
