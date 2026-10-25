@@ -20,6 +20,8 @@
 
 ## Запуск
 
+[Як прибрати Кошик із робочого стола: Windows 11/10, зі скриншотами](docs/hide-desktop-recycle-bin.md)
+
 Цільова платформа: Windows 10 22H2 / Windows 11, x64. Окреме середовище .NET чи Python не потрібне.
 
 Portable: розпакуйте ZIP у доступну для запису папку та запустіть `recycle-desk.exe`. Файл `portable.flag` задає переносний режим; налаштування зберігаються поряд у `recycle-desk.ini`.

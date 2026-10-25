@@ -18,6 +18,8 @@ Version 0.1.2 adds inline file thumbnails, a branded tray icon with a full-bin i
 
 ## Install
 
+[Hide the desktop Recycle Bin: Windows 11/10 guide with screenshots](docs/hide-desktop-recycle-bin.en.md)
+
 Target: Windows 10 22H2 / Windows 11, x64. Windows 10 has not yet been tested on a physical machine. No .NET or Python installation is needed.
 
 **Portable:** extract `RecycleDesk-<version>-windows-x64.zip` into a writable folder and run `recycle-desk.exe`. Keep `portable.flag` beside it. Settings are stored in `recycle-desk.ini`.
