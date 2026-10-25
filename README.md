@@ -4,6 +4,26 @@
 
 [Завантажити](https://github.com/CpPrice11/recycle-desk/releases/latest) · [English](README.en.md)
 
+## Скриншоти
+
+Версія 0.1.2 з демонстраційними файлами.
+
+![Темна тема з мініпрев’ю файлів](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/main-dark-uk-v012.png)
+
+<details>
+<summary>Світла тема · English</summary>
+
+![Світла тема з мініпрев’ю файлів](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/main-light-en-v012.png)
+
+</details>
+
+<details>
+<summary>Пошук у списку файлів</summary>
+
+![Пошук за назвою залишає лише відповідні файли](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/search-dark-uk-v012.png)
+
+</details>
+
 ## Можливості
 
 - Іконка порожнього або повного кошика в треї; кількість елементів і загальний розмір у підказці.

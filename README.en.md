@@ -4,6 +4,26 @@ A compact Windows recycle bin manager that lives in the system tray. Free and op
 
 [Download](https://github.com/CpPrice11/recycle-desk/releases/latest) · [Українська](README.md)
 
+## Screenshots
+
+Version 0.1.2 with demo files.
+
+![Dark theme with file thumbnails](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/main-dark-uk-v012.png)
+
+<details>
+<summary>Light theme · English</summary>
+
+![Light theme with file thumbnails](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/main-light-en-v012.png)
+
+</details>
+
+<details>
+<summary>Search the file list</summary>
+
+![Searching by name filters the file list](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/search-dark-uk-v012.png)
+
+</details>
+
 ## Features
 
 - Empty/full tray icon with item count and total size in its tooltip.
