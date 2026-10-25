@@ -44,4 +44,4 @@ Return to the same dialog, check **Recycle Bin**, and select **Apply → OK**. S
 
 The final-dialog illustration loads unchanged from [Microsoft Support](https://support.microsoft.com/en-us/windows/experience/personalization/customize-the-desktop-icons-in-windows). The two archived Windows 10 images load from the official CDN for [ASUS article 1044722](https://www.asus.com/support/faq/1044722/). An article update date does not establish when its screenshots were taken.
 
-The user's personal screenshots are not published. Images and trademarks belong to their respective owners and are not relicensed under the project's MIT license. If images do not load, open the source article.
+Images and trademarks belong to their respective owners and are not relicensed under the project's MIT license. If images do not load, open the source article.

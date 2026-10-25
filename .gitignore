@@ -5,6 +5,7 @@
 /.codex/
 /work/
 /ROADMAP.md
+/replica/
 *.user
 recycle-desk.ini
 *private*.key

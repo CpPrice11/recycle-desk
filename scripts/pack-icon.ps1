@@ -1,4 +1,4 @@
-# Package the imagegen PNG as a Windows multi-resolution ICO. No retouching.
+# Package the source PNG as a Windows multi-resolution ICO.
 param(
     [string]$Source = 'resources/icons/recycle-desk-v1.png',
     [string]$Destination = 'resources/icons/recycle-desk-v1.ico'

@@ -1,0 +1,39 @@
+name: Capture application screenshots
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Published release tag
+        required: true
+        default: v0.1.2
+permissions:
+  contents: read
+jobs:
+  screenshots:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download published portable build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a stable release tag' }
+          $version = $env:RELEASE_TAG.Substring(1)
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern "RecycleDesk-$version-windows-x64.zip" --pattern SHA256SUMS.txt --dir test-output/download
+          if ($LASTEXITCODE) { throw 'Release download failed' }
+          $archive = "test-output/download/RecycleDesk-$version-windows-x64.zip"
+          $expected = (Get-Content test-output/download/SHA256SUMS.txt | Where-Object { $_ -match "  RecycleDesk-$([regex]::Escape($version))-windows-x64\.zip$" }) -split '\s+'
+          if ($expected.Count -ne 2 -or (Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected[0]) { throw 'Checksum mismatch' }
+          Expand-Archive -LiteralPath $archive -DestinationPath test-output/portable
+      - name: Capture real windows with demo files
+        shell: pwsh
+        env:
+          CI_SCREENSHOT_CAPTURE: 'true'
+        run: ./scripts/capture-screenshots.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recycle-desk-screenshots
+          path: test-output/screenshots/
