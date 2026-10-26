@@ -79,6 +79,15 @@ function Save-AppWindow([IntPtr]$window, [string]$name) {
         $image.Save((Join-Path $out $name), [Drawing.Imaging.ImageFormat]::Png)
     } finally { $graphics.Dispose(); $image.Dispose() }
 }
+function Save-DesktopImage([string]$name) {
+    $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $image = [Drawing.Bitmap]::new($screen.Width, $screen.Height, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $graphics = [Drawing.Graphics]::FromImage($image)
+    try {
+        $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $screen.Size)
+        $image.Save((Join-Path $out $name), [Drawing.Imaging.ImageFormat]::Png)
+    } finally { $graphics.Dispose(); $image.Dispose() }
+}
 function Save-TrayDesktop([IntPtr]$window) {
     $taskbar = [CaptureWindow]::FindWindow('Shell_TrayWnd', $null)
     if ($taskbar -eq [IntPtr]::Zero) { throw 'Remote Windows taskbar not available' }
@@ -86,6 +95,8 @@ function Save-TrayDesktop([IntPtr]$window) {
     if ($notify -eq [IntPtr]::Zero) { throw 'Notification area not available' }
     [void][CaptureWindow]::MoveWindow($window, 24, 24, 900, 640, $true)
     Start-Sleep -Seconds 2
+    Save-DesktopImage 'tray-diagnostic.png'
+    Save-AppWindow $taskbar 'taskbar-diagnostic.png'
     $area = [Windows.Automation.AutomationElement]::FromHandle($notify)
     $elements = $area.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
     $icon = $elements | Where-Object { $_.Current.Name -like 'Recycle Desk*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
@@ -101,6 +112,7 @@ function Save-TrayDesktop([IntPtr]$window) {
         [CaptureWindow]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
         [CaptureWindow]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
         Start-Sleep -Seconds 1
+        Save-DesktopImage 'overflow-diagnostic.png'
         $overflow = [CaptureWindow]::FindWindow('NotifyIconOverflowWindow', $null)
         if ($overflow -eq [IntPtr]::Zero) { throw 'Notification overflow did not open' }
         $area = [Windows.Automation.AutomationElement]::FromHandle($overflow)
@@ -108,7 +120,8 @@ function Save-TrayDesktop([IntPtr]$window) {
         $icon = $elements | Where-Object { $_.Current.Name -like 'Recycle Desk*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
     }
     if (-not $icon) {
-        $elements | ForEach-Object { Write-Output "Notification element: $($_.Current.Name) [$($_.Current.AutomationId)]" }
+        $elements | ForEach-Object { Write-Output "Notification element: $($_.Current.Name) [$($_.Current.AutomationId)] offscreen=$($_.Current.IsOffscreen), bounds=$($_.Current.BoundingRectangle)" }
+        Write-Output "Overflow native visibility: $([CaptureWindow]::FindWindow('NotifyIconOverflowWindow', $null))"
         throw 'Recycle Desk is not visible in the notification area'
     }
     $bounds = $icon.Current.BoundingRectangle
@@ -116,12 +129,7 @@ function Save-TrayDesktop([IntPtr]$window) {
     [void][CaptureWindow]::SetCursorPos([int]($bounds.X + $bounds.Width / 2), [int]($bounds.Y + $bounds.Height / 2))
     Start-Sleep -Milliseconds 1800
     $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $image = [Drawing.Bitmap]::new($screen.Width, $screen.Height, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
-    $graphics = [Drawing.Graphics]::FromImage($image)
-    try {
-        $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $screen.Size)
-        $image.Save((Join-Path $out 'tray-desktop-uk-v012.png'), [Drawing.Imaging.ImageFormat]::Png)
-    } finally { $graphics.Dispose(); $image.Dispose() }
+    Save-DesktopImage 'tray-desktop-uk-v012.png'
     [ordered]@{ name=$icon.Current.Name; x=$bounds.X; y=$bounds.Y; width=$bounds.Width; height=$bounds.Height; desktop_width=$screen.Width; desktop_height=$screen.Height } |
         ConvertTo-Json | Set-Content (Join-Path $out 'tray.json') -Encoding utf8
 }
