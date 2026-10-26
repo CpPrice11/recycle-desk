@@ -96,12 +96,10 @@ function Save-TrayDesktop([IntPtr]$window) {
     [void][CaptureWindow]::ShowWindow($window, 3)
     [void][CaptureWindow]::RedrawWindow($window, [IntPtr]::Zero, [IntPtr]::Zero, 0x185)
     Start-Sleep -Seconds 2
-    Save-DesktopImage 'tray-diagnostic.png'
     $button = [CaptureWindow]::GetDlgItem($notify, 1502)
     if ($button -ne [IntPtr]::Zero) {
         [void][CaptureWindow]::PostMessage($button, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero)
         Start-Sleep -Seconds 1
-        Save-DesktopImage 'overflow-diagnostic.png'
     }
     # Ask Windows for this exact app's registered notification icon (HWND + ID 1).
     # https://learn.microsoft.com/windows/win32/api/shellapi/nf-shellapi-shell_notifyicongetrect
@@ -116,7 +114,7 @@ function Save-TrayDesktop([IntPtr]$window) {
     [void][CaptureWindow]::SetCursorPos([int](($bounds.Left + $bounds.Right) / 2), [int](($bounds.Top + $bounds.Bottom) / 2))
     Start-Sleep -Milliseconds 1800
     Save-DesktopImage 'tray-desktop-uk-v012.png'
-    $detail = [Drawing.Rectangle]::FromLTRB([Math]::Max(0, $bounds.Left - 250), [Math]::Max(0, $bounds.Top - 130), $screen.Right, $screen.Bottom)
+    $detail = [Drawing.Rectangle]::FromLTRB([Math]::Max(0, $bounds.Left - 56), [Math]::Max(0, $bounds.Top - 80), $screen.Right, $screen.Bottom)
     Save-DesktopImage 'tray-detail-uk-v012.png' $detail
     [ordered]@{ name='Recycle Desk'; x=$bounds.Left; y=$bounds.Top; width=($bounds.Right-$bounds.Left); height=($bounds.Bottom-$bounds.Top); desktop_width=$screen.Width; desktop_height=$screen.Height; detail_x=$detail.X; detail_y=$detail.Y; detail_width=$detail.Width; detail_height=$detail.Height } |
         ConvertTo-Json | Set-Content (Join-Path $out 'tray.json') -Encoding utf8
