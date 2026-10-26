@@ -5,12 +5,17 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:CI_SCREENSHOT_CAPTURE -ne 'true') {
 }
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class CaptureWindow {
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int x, int y, int width, int height, bool repaint);
@@ -27,6 +32,13 @@ New-Item -ItemType Directory -Force $out | Out-Null
 $exe = (Get-ChildItem (Join-Path $root 'test-output/portable') -Filter recycle-desk.exe -Recurse | Select-Object -First 1).FullName
 if (-not $exe) { throw 'Portable application not found' }
 $programDir = Split-Path $exe -Parent
+if ([CaptureWindow]::FindWindow('Shell_TrayWnd', $null) -eq [IntPtr]::Zero) {
+    Start-Process -FilePath "$env:WINDIR/explorer.exe" -WindowStyle Hidden
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        Start-Sleep -Milliseconds 250
+        if ([CaptureWindow]::FindWindow('Shell_TrayWnd', $null) -ne [IntPtr]::Zero) { break }
+    }
+}
 $demo = 'C:\Recycle Desk Demo'
 if (Test-Path -LiteralPath $demo) { throw 'Demo directory already exists' }
 New-Item -ItemType Directory "$demo/Images", "$demo/Documents" | Out-Null
@@ -66,6 +78,49 @@ function Save-AppWindow([IntPtr]$window, [string]$name) {
         $image.Save((Join-Path $out $name), [Drawing.Imaging.ImageFormat]::Png)
     } finally { $graphics.Dispose(); $image.Dispose() }
 }
+function Save-TrayDesktop([IntPtr]$window) {
+    $taskbar = [CaptureWindow]::FindWindow('Shell_TrayWnd', $null)
+    if ($taskbar -eq [IntPtr]::Zero) { throw 'Remote Windows taskbar not available' }
+    $notify = [CaptureWindow]::FindWindowEx($taskbar, [IntPtr]::Zero, 'TrayNotifyWnd', $null)
+    if ($notify -eq [IntPtr]::Zero) { throw 'Notification area not available' }
+    [void][CaptureWindow]::MoveWindow($window, 24, 24, 900, 640, $true)
+    Start-Sleep -Seconds 2
+    $area = [Windows.Automation.AutomationElement]::FromHandle($notify)
+    $elements = $area.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
+    $icon = $elements | Where-Object { $_.Current.Name -like 'Recycle Desk*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
+    if (-not $icon) {
+        $chevron = $elements | Where-Object { $_.Current.AutomationId -eq '1502' -or $_.Current.Name -match 'hidden icons|Notification Chevron' } | Select-Object -First 1
+        if (-not $chevron) {
+            $elements | ForEach-Object { Write-Output "Notification element: $($_.Current.Name) [$($_.Current.AutomationId)]" }
+            throw 'Tray icon and overflow button were not found'
+        }
+        $invoke = $chevron.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)
+        $invoke.Invoke()
+        Start-Sleep -Seconds 1
+        $overflow = [CaptureWindow]::FindWindow('NotifyIconOverflowWindow', $null)
+        if ($overflow -eq [IntPtr]::Zero) { throw 'Notification overflow did not open' }
+        $area = [Windows.Automation.AutomationElement]::FromHandle($overflow)
+        $elements = $area.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
+        $icon = $elements | Where-Object { $_.Current.Name -like 'Recycle Desk*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
+    }
+    if (-not $icon) {
+        $elements | ForEach-Object { Write-Output "Notification element: $($_.Current.Name) [$($_.Current.AutomationId)]" }
+        throw 'Recycle Desk is not visible in the notification area'
+    }
+    $bounds = $icon.Current.BoundingRectangle
+    if ($bounds.Width -lt 8 -or $bounds.Height -lt 8) { throw 'Invalid tray icon bounds' }
+    [void][CaptureWindow]::SetCursorPos([int]($bounds.X + $bounds.Width / 2), [int]($bounds.Y + $bounds.Height / 2))
+    Start-Sleep -Milliseconds 1800
+    $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $image = [Drawing.Bitmap]::new($screen.Width, $screen.Height, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $graphics = [Drawing.Graphics]::FromImage($image)
+    try {
+        $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $screen.Size)
+        $image.Save((Join-Path $out 'tray-desktop-uk-v012.png'), [Drawing.Imaging.ImageFormat]::Png)
+    } finally { $graphics.Dispose(); $image.Dispose() }
+    [ordered]@{ name=$icon.Current.Name; x=$bounds.X; y=$bounds.Y; width=$bounds.Width; height=$bounds.Height; desktop_width=$screen.Width; desktop_height=$screen.Height } |
+        ConvertTo-Json | Set-Content (Join-Path $out 'tray.json') -Encoding utf8
+}
 foreach ($variant in @(@{theme='dark'; lang='uk'}, @{theme='light'; lang='en'})) {
     $settings = "language=$($variant.lang)" + [Environment]::NewLine + "theme=$($variant.theme)" + [Environment]::NewLine + 'auto_update=false'
     [IO.File]::WriteAllText((Join-Path $programDir 'recycle-desk.ini'), $settings)
@@ -87,6 +142,8 @@ foreach ($variant in @(@{theme='dark'; lang='uk'}, @{theme='light'; lang='en'}))
         Start-Sleep -Seconds 6
         Save-AppWindow $window "main-$($variant.theme)-$($variant.lang)-v012.png"
         if ($variant.theme -eq 'dark') {
+            Save-TrayDesktop $window
+            [void][CaptureWindow]::MoveWindow($window, 20, 20, 1100, 780, $true)
             $search = [CaptureWindow]::GetDlgItem($window, 108)
             if ($search -eq [IntPtr]::Zero) { throw 'Search control not found' }
             [void][CaptureWindow]::SendMessage($search, 12, [IntPtr]::Zero, 'shapes')
@@ -106,6 +163,6 @@ $metadata = [ordered]@{
     captured_utc = [DateTime]::UtcNow.ToString('o')
     windows = (Get-CimInstance Win32_OperatingSystem).Caption
     fixtures = 'Six disposable demo files under C:\Recycle Desk Demo; no personal data.'
-    capture = 'PrintWindow on the unmodified published application; no compositing or mock UI.'
+    capture = 'PrintWindow for app windows; CopyFromScreen for the real desktop and Explorer tray. Unmodified published application; no mock UI.'
 }
 $metadata | ConvertTo-Json | Set-Content (Join-Path $out 'capture.json') -Encoding utf8
