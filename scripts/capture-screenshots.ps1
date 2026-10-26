@@ -16,6 +16,7 @@ public static class CaptureWindow {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int x, int y, int width, int height, bool repaint);
@@ -94,8 +95,11 @@ function Save-TrayDesktop([IntPtr]$window) {
             $elements | ForEach-Object { Write-Output "Notification element: $($_.Current.Name) [$($_.Current.AutomationId)]" }
             throw 'Tray icon and overflow button were not found'
         }
-        $invoke = $chevron.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)
-        $invoke.Invoke()
+        $buttonBounds = $chevron.Current.BoundingRectangle
+        if ($buttonBounds.Width -lt 8 -or $buttonBounds.Height -lt 8 -or $chevron.Current.IsOffscreen) { throw 'Overflow button is not visible' }
+        [void][CaptureWindow]::SetCursorPos([int]($buttonBounds.X + $buttonBounds.Width / 2), [int]($buttonBounds.Y + $buttonBounds.Height / 2))
+        [CaptureWindow]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+        [CaptureWindow]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
         Start-Sleep -Seconds 1
         $overflow = [CaptureWindow]::FindWindow('NotifyIconOverflowWindow', $null)
         if ($overflow -eq [IntPtr]::Zero) { throw 'Notification overflow did not open' }
