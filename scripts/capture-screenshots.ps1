@@ -17,6 +17,7 @@ public static class CaptureWindow {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+    [DllImport("user32.dll")] public static extern bool RedrawWindow(IntPtr window, IntPtr rect, IntPtr region, uint flags);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int x, int y, int width, int height, bool repaint);
@@ -93,10 +94,14 @@ function Save-TrayDesktop([IntPtr]$window) {
     if ($taskbar -eq [IntPtr]::Zero) { throw 'Remote Windows taskbar not available' }
     $notify = [CaptureWindow]::FindWindowEx($taskbar, [IntPtr]::Zero, 'TrayNotifyWnd', $null)
     if ($notify -eq [IntPtr]::Zero) { throw 'Notification area not available' }
+    $console = [IntPtr]::Zero
+    while (($console = [CaptureWindow]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
+        [void][CaptureWindow]::ShowWindow($console, 0)
+    }
     [void][CaptureWindow]::MoveWindow($window, 24, 24, 900, 640, $true)
+    [void][CaptureWindow]::RedrawWindow($window, [IntPtr]::Zero, [IntPtr]::Zero, 0x185)
     Start-Sleep -Seconds 2
     Save-DesktopImage 'tray-diagnostic.png'
-    Save-AppWindow $taskbar 'taskbar-diagnostic.png'
     $area = [Windows.Automation.AutomationElement]::FromHandle($notify)
     $elements = $area.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
     $icon = $elements | Where-Object { $_.Current.Name -like 'Recycle Desk*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
@@ -108,9 +113,10 @@ function Save-TrayDesktop([IntPtr]$window) {
         }
         $buttonBounds = $chevron.Current.BoundingRectangle
         if ($buttonBounds.Width -lt 8 -or $buttonBounds.Height -lt 8 -or $chevron.Current.IsOffscreen) { throw 'Overflow button is not visible' }
-        [void][CaptureWindow]::SetCursorPos([int]($buttonBounds.X + $buttonBounds.Width / 2), [int]($buttonBounds.Y + $buttonBounds.Height / 2))
-        [CaptureWindow]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
-        [CaptureWindow]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+        Write-Output "Overflow button: $($chevron.Current.Name), bounds=$buttonBounds, handle=$($chevron.Current.NativeWindowHandle)"
+        $button = [CaptureWindow]::GetDlgItem($notify, 1502)
+        if ($button -eq [IntPtr]::Zero) { throw 'Native overflow button not found' }
+        [void][CaptureWindow]::PostMessage($button, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero)
         Start-Sleep -Seconds 1
         Save-DesktopImage 'overflow-diagnostic.png'
         $overflow = [CaptureWindow]::FindWindow('NotifyIconOverflowWindow', $null)
