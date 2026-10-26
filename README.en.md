@@ -8,7 +8,11 @@ A compact Windows recycle bin manager that lives in the system tray. Free and op
 
 Version 0.1.2 with demo files.
 
-![Dark theme with file thumbnails](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/main-dark-uk-v012.png)
+![Recycle Desk and its icon in the expanded notification area](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/tray-desktop-uk-v012.png)
+
+The blue bin with the green indicator is Recycle Desk in the expanded notification area:
+
+<img src="https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/tray-detail-uk-v012.png" width="466" alt="Close-up of the Recycle Desk notification area icon">
 
 <details>
 <summary>Light theme · English</summary>

@@ -8,7 +8,11 @@
 
 Версія 0.1.2 з демонстраційними файлами.
 
-![Темна тема з мініпрев’ю файлів](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/main-dark-uk-v012.png)
+![Recycle Desk та його іконка в розгорнутому системному треї](https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/tray-desktop-uk-v012.png)
+
+Кошик у треї — синя іконка із зеленим індикатором у розгорнутій області значків:
+
+<img src="https://raw.githubusercontent.com/CpPrice11/pullora-assets/main/media/cpprice11/recycle-desk/tray-detail-uk-v012.png" width="466" alt="Крупний план іконки Recycle Desk у системному треї">
 
 <details>
 <summary>Світла тема · English</summary>
