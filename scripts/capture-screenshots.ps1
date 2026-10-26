@@ -6,17 +6,16 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:CI_SCREENSHOT_CAPTURE -ne 'true') {
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class CaptureWindow {
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct IconId { public uint Size; public IntPtr Window; public uint Id; public Guid Guid; }
+    [DllImport("shell32.dll")] public static extern int Shell_NotifyIconGetRect(ref IconId id, out Rect rect);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern bool RedrawWindow(IntPtr window, IntPtr rect, IntPtr region, uint flags);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
@@ -80,8 +79,8 @@ function Save-AppWindow([IntPtr]$window, [string]$name) {
         $image.Save((Join-Path $out $name), [Drawing.Imaging.ImageFormat]::Png)
     } finally { $graphics.Dispose(); $image.Dispose() }
 }
-function Save-DesktopImage([string]$name) {
-    $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+function Save-DesktopImage([string]$name, [Drawing.Rectangle]$screen = [Drawing.Rectangle]::Empty) {
+    if ($screen.IsEmpty) { $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds }
     $image = [Drawing.Bitmap]::new($screen.Width, $screen.Height, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
     $graphics = [Drawing.Graphics]::FromImage($image)
     try {
@@ -94,49 +93,32 @@ function Save-TrayDesktop([IntPtr]$window) {
     if ($taskbar -eq [IntPtr]::Zero) { throw 'Remote Windows taskbar not available' }
     $notify = [CaptureWindow]::FindWindowEx($taskbar, [IntPtr]::Zero, 'TrayNotifyWnd', $null)
     if ($notify -eq [IntPtr]::Zero) { throw 'Notification area not available' }
-    $console = [IntPtr]::Zero
-    while (($console = [CaptureWindow]::FindWindowEx([IntPtr]::Zero, $console, 'ConsoleWindowClass', $null)) -ne [IntPtr]::Zero) {
-        [void][CaptureWindow]::ShowWindow($console, 0)
-    }
-    [void][CaptureWindow]::MoveWindow($window, 24, 24, 900, 640, $true)
+    [void][CaptureWindow]::ShowWindow($window, 3)
     [void][CaptureWindow]::RedrawWindow($window, [IntPtr]::Zero, [IntPtr]::Zero, 0x185)
     Start-Sleep -Seconds 2
     Save-DesktopImage 'tray-diagnostic.png'
-    $area = [Windows.Automation.AutomationElement]::FromHandle($notify)
-    $elements = $area.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
-    $icon = $elements | Where-Object { $_.Current.Name -like 'Recycle Desk*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
-    if (-not $icon) {
-        $chevron = $elements | Where-Object { $_.Current.AutomationId -eq '1502' -or $_.Current.Name -match 'hidden icons|Notification Chevron' } | Select-Object -First 1
-        if (-not $chevron) {
-            $elements | ForEach-Object { Write-Output "Notification element: $($_.Current.Name) [$($_.Current.AutomationId)]" }
-            throw 'Tray icon and overflow button were not found'
-        }
-        $buttonBounds = $chevron.Current.BoundingRectangle
-        if ($buttonBounds.Width -lt 8 -or $buttonBounds.Height -lt 8 -or $chevron.Current.IsOffscreen) { throw 'Overflow button is not visible' }
-        Write-Output "Overflow button: $($chevron.Current.Name), bounds=$buttonBounds, handle=$($chevron.Current.NativeWindowHandle)"
-        $button = [CaptureWindow]::GetDlgItem($notify, 1502)
-        if ($button -eq [IntPtr]::Zero) { throw 'Native overflow button not found' }
+    $button = [CaptureWindow]::GetDlgItem($notify, 1502)
+    if ($button -ne [IntPtr]::Zero) {
         [void][CaptureWindow]::PostMessage($button, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero)
         Start-Sleep -Seconds 1
         Save-DesktopImage 'overflow-diagnostic.png'
-        $overflow = [CaptureWindow]::FindWindow('NotifyIconOverflowWindow', $null)
-        if ($overflow -eq [IntPtr]::Zero) { throw 'Notification overflow did not open' }
-        $area = [Windows.Automation.AutomationElement]::FromHandle($overflow)
-        $elements = $area.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
-        $icon = $elements | Where-Object { $_.Current.Name -like 'Recycle Desk*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
     }
-    if (-not $icon) {
-        $elements | ForEach-Object { Write-Output "Notification element: $($_.Current.Name) [$($_.Current.AutomationId)] offscreen=$($_.Current.IsOffscreen), bounds=$($_.Current.BoundingRectangle)" }
-        Write-Output "Overflow native visibility: $([CaptureWindow]::FindWindow('NotifyIconOverflowWindow', $null))"
-        throw 'Recycle Desk is not visible in the notification area'
-    }
-    $bounds = $icon.Current.BoundingRectangle
-    if ($bounds.Width -lt 8 -or $bounds.Height -lt 8) { throw 'Invalid tray icon bounds' }
-    [void][CaptureWindow]::SetCursorPos([int]($bounds.X + $bounds.Width / 2), [int]($bounds.Y + $bounds.Height / 2))
-    Start-Sleep -Milliseconds 1800
+    # Ask Windows for this exact app's registered notification icon (HWND + ID 1).
+    # https://learn.microsoft.com/windows/win32/api/shellapi/nf-shellapi-shell_notifyicongetrect
+    $identity = [CaptureWindow+IconId]::new()
+    $identity.Size = [Runtime.InteropServices.Marshal]::SizeOf($identity)
+    $identity.Window = $window
+    $identity.Id = 1
+    $bounds = [CaptureWindow+Rect]::new()
+    if ([CaptureWindow]::Shell_NotifyIconGetRect([ref]$identity, [ref]$bounds) -ne 0) { throw 'Registered Recycle Desk tray icon not found' }
     $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+    if ($bounds.Right - $bounds.Left -lt 8 -or $bounds.Bottom - $bounds.Top -lt 8 -or $bounds.Left -lt 0 -or $bounds.Top -lt 0 -or $bounds.Right -gt $screen.Right -or $bounds.Bottom -gt $screen.Bottom) { throw 'Tray icon is outside the captured screen' }
+    [void][CaptureWindow]::SetCursorPos([int](($bounds.Left + $bounds.Right) / 2), [int](($bounds.Top + $bounds.Bottom) / 2))
+    Start-Sleep -Milliseconds 1800
     Save-DesktopImage 'tray-desktop-uk-v012.png'
-    [ordered]@{ name=$icon.Current.Name; x=$bounds.X; y=$bounds.Y; width=$bounds.Width; height=$bounds.Height; desktop_width=$screen.Width; desktop_height=$screen.Height } |
+    $detail = [Drawing.Rectangle]::FromLTRB([Math]::Max(0, $bounds.Left - 250), [Math]::Max(0, $bounds.Top - 130), $screen.Right, $screen.Bottom)
+    Save-DesktopImage 'tray-detail-uk-v012.png' $detail
+    [ordered]@{ name='Recycle Desk'; x=$bounds.Left; y=$bounds.Top; width=($bounds.Right-$bounds.Left); height=($bounds.Bottom-$bounds.Top); desktop_width=$screen.Width; desktop_height=$screen.Height; detail_x=$detail.X; detail_y=$detail.Y; detail_width=$detail.Width; detail_height=$detail.Height } |
         ConvertTo-Json | Set-Content (Join-Path $out 'tray.json') -Encoding utf8
 }
 foreach ($variant in @(@{theme='dark'; lang='uk'}, @{theme='light'; lang='en'})) {
